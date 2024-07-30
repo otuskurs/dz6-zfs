@@ -1,0 +1,99 @@
+---
+- hosts: all
+  gather_facts: true
+  become: true
+  tasks:
+# 1. Определение алгоритма с наилучшим сжатием
+  - name: Устанавливаем zfs 
+    ansible.builtin.command: "apt install zfsutils-linux"
+  - name: Создаём пул из двух дисков в режиме RAID 1
+    ansible.builtin.shell: | 
+     zpool create otus1 mirror /dev/sdb /dev/sdc |
+     zpool create otus2 mirror /dev/sdd /dev/sde |
+     zpool create otus3 mirror /dev/sdf /dev/sdg |
+     zpool create otus4 mirror /dev/sdh /dev/sdi
+  - name: Добавим разные алгоритмы сжатия в каждую файловую систему
+    ansible.builtin.shell: |
+     zfs set compression=lzjb otus1 |
+     zfs set compression=lz4 otus2 |
+     zfs set compression=gzip-9 otus3 |
+     zfs set compression=zle otus4    
+  - name: Скачаем один и тот же текстовый файл во все пулы
+    ansible.builtin.shell: |
+      wget -P /otus1 https://gutenberg.org/cache/epub/2600/pg2600.converter.log |
+      wget -P /otus2 https://gutenberg.org/cache/epub/2600/pg2600.converter.log |
+      wget -P /otus3 https://gutenberg.org/cache/epub/2600/pg2600.converter.log |
+      wget -P /otus4 https://gutenberg.org/cache/epub/2600/pg2600.converter.log
+  - name: Проверим, сколько места занимает один и тот же файл в разных пулах и проверим степень сжатия файлов
+    ansible.builtin.shell: zfs list
+    register: zfs_list
+  - name: вывод, чекаем степень сжатия
+    ansible.builtin.debug:
+      var: zfs_list.stdout_lines
+# 2. Определение настроек пула
+  - name: Скачиваем архив в домашний каталог
+    ansible.builtin.shell: | 
+      wget -O archive.tar.gz --no-check-certificate 'https://drive.usercontent.google.com/download?id=1MvrcEp-WgAQe57aDEzxSRalPAwbNN1Bb&export=download'
+  - name: Разархивируем его
+    ansible.builtin.shell: | 
+       tar -xzvf archive.tar.gz
+  - name: Сделаем импорт данного пула к нам в ОС
+    ansible.builtin.shell: | 
+       zpool import -d zpoolexport/ otus
+  - name: Обновляем пул
+    ansible.builtin.shell: | 
+       zpool upgrade otus
+  - name: Запрос сразу всех параметром файловой системы
+    ansible.builtin.shell: zfs get all otus
+    register: get_all_otus
+  - name: вывод Запрос сразу всех параметром файловой системы
+    ansible.builtin.debug:
+      var: get_all_otus.stdout_lines
+  - name: Размер
+    ansible.builtin.shell: zfs get available otus
+    register: get_available_otus
+  - name: вывод Размер
+    ansible.builtin.debug:
+      var: get_available_otus.stdout_lines
+  - name: Тип
+    ansible.builtin.shell: zfs get readonly otus
+    register: get_readonly_otus
+  - name: вывод Тип
+    ansible.builtin.debug:
+      var: get_readonly_otus.stdout_lines
+  - name: Значение recordsize
+    ansible.builtin.shell: zfs get recordsize otus
+    register: get_recordsize_otus
+  - name: вывод Значение recordsize
+    ansible.builtin.debug:
+      var: get_recordsize_otus.stdout_lines
+  - name: Тип сжатия
+    ansible.builtin.shell: zfs get compression otus
+    register: get_compression_otus
+  - name: вывод Тип сжатия
+    ansible.builtin.debug:
+      var: get_compression_otus.stdout_lines
+  - name: Тип контрольной суммы
+    ansible.builtin.shell: zfs get checksum otus
+    register: get_checksum_otus
+  - name: вывод Тип контрольной суммы
+    ansible.builtin.debug:
+      var: get_checksum_otus.stdout_lines
+# 3. Работа со снапшотом, поиск сообщения от преподавателя
+  - name: Скачаем файл, указанный в задании
+    ansible.builtin.shell: | 
+      wget -O otus_task2.file --no-check-certificate 'https://drive.usercontent.google.com/download?id=1wgxjih8YZ-cqLqaZVa0lA3h3Y029c3oI&export=download'
+  - name: Восстановим файловую систему из снапшота
+    ansible.builtin.shell: | 
+      zfs receive otus/test@today < otus_task2.file
+  - name: Далее, ищем в каталоге /otus/test файл с именем “secret_message”
+    ansible.builtin.shell: | 
+      find /otus/test -name "secret_message"
+    register: find_otus
+  - name: Смотрим содержимое найденного файла
+    ansible.builtin.shell: | 
+      cat {{ find_otus.stdout }}
+    register: cat_otus
+  - name: Выводим содержимое найденного файла
+    ansible.builtin.debug: 
+      var: cat_otus.stdout
